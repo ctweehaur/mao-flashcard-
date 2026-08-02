@@ -37,6 +37,7 @@ function initApp() {
         setupFlipEvent();
         renderCard();
         updateMasteryProgress();
+        updateNavButtons();
     } catch (error) {
         console.error("初始化失败:", error);
     }
@@ -48,6 +49,7 @@ function renderCard() {
         return;
     }
     if (currentIndex >= currentPlan.length) { currentIndex = 0; }
+    if (currentIndex < 0) { currentIndex = 0; }
 
     const currentWord = currentPlan[currentIndex];
     const flipCardEl = document.getElementById('flip-card');
@@ -103,6 +105,9 @@ function renderCard() {
     if (progressEl) {
         progressEl.innerText = `进度：${currentIndex + 1} / ${currentPlan.length} ${isWeaknessMode ? '（错题训练中）' : ''}`;
     }
+
+    // 更新导航按钮状态
+    updateNavButtons();
 }
 
 function setupFlipEvent() {
@@ -117,8 +122,78 @@ function setupFlipEvent() {
     }
 }
 
+// ==========================================
+// 3. 导航功能：上一个 / 下一个
+// ==========================================
+function prevCard() {
+    if (currentPlan.length === 0) return;
+    
+    // 如果当前是第一张，跳转到最后一张
+    if (currentIndex === 0) {
+        currentIndex = currentPlan.length - 1;
+    } else {
+        currentIndex--;
+    }
+    
+    // 如果卡片是翻转状态，回到正面
+    const flipCardEl = document.getElementById('flip-card');
+    if (flipCardEl && isFlipped) {
+        flipCardEl.classList.remove('rotate-y-180');
+        isFlipped = false;
+    }
+    
+    renderCard();
+}
+
+function nextCard() {
+    if (currentPlan.length === 0) return;
+    
+    // 如果当前是最后一张，跳转到第一张
+    if (currentIndex === currentPlan.length - 1) {
+        currentIndex = 0;
+    } else {
+        currentIndex++;
+    }
+    
+    // 如果卡片是翻转状态，回到正面
+    const flipCardEl = document.getElementById('flip-card');
+    if (flipCardEl && isFlipped) {
+        flipCardEl.classList.remove('rotate-y-180');
+        isFlipped = false;
+    }
+    
+    renderCard();
+}
+
+function updateNavButtons() {
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const counter = document.getElementById('card-counter');
+    
+    // 按钮禁用状态（只有0个词时禁用）
+    if (prevBtn) {
+        prevBtn.disabled = currentPlan.length === 0;
+        prevBtn.style.opacity = currentPlan.length === 0 ? '0.3' : '1';
+    }
+    if (nextBtn) {
+        nextBtn.disabled = currentPlan.length === 0;
+        nextBtn.style.opacity = currentPlan.length === 0 ? '0.3' : '1';
+    }
+    if (counter) {
+        if (currentPlan.length > 0) {
+            counter.innerText = `${currentIndex + 1} / ${currentPlan.length}`;
+        } else {
+            counter.innerText = '0 / 0';
+        }
+    }
+}
+
+// ==========================================
+// 4. 标记掌握状态
+// ==========================================
 function markMastery(isMastered) {
     if (currentPlan.length === 0) return;
+    
     const currentWord = currentPlan[currentIndex];
     let wrongList = JSON.parse(localStorage.getItem('vocabulary_wrong_list')) || [];
     const currentWordText = currentWord.word || '';
@@ -137,20 +212,8 @@ function markMastery(isMastered) {
     updateWeaknessButton(wrongList.length);
     updateMasteryProgress();
     
-    currentIndex++;
-    if (currentIndex >= currentPlan.length) {
-        if (isWeaknessMode) {
-            showToast("👑 太棒了！本轮错题专项集训全部通关！");
-            isWeaknessMode = false;
-            currentPlan = [...allIdioms].sort(() => 0.5 - Math.random());
-            currentIndex = 0;
-        } else {
-            showToast("🎉 所有生词已全部浏览完毕！重新打乱继续学习");
-            currentPlan = [...allIdioms].sort(() => 0.5 - Math.random());
-            currentIndex = 0;
-        }
-    }
-    renderCard();
+    // 自动进入下一个
+    nextCard();
 }
 
 function startWeaknessTraining() {
@@ -168,6 +231,10 @@ function startWeaknessTraining() {
 function updateWeaknessButton(count) {
     const btn = document.querySelector('button[onclick="startWeaknessTraining()"]');
     if (btn) btn.innerHTML = `🎯 开启错题专项训练 (<span class="text-amber-600 font-bold">${count}</span>)`;
+    
+    // 同时更新单独显示的计数
+    const countEl = document.getElementById('wrong-count');
+    if (countEl) countEl.innerText = count;
 }
 
 function showEmptyState() {
@@ -176,7 +243,7 @@ function showEmptyState() {
 }
 
 // ==========================================
-// 3. Toast 通知系统
+// 5. Toast 通知系统
 // ==========================================
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
@@ -196,7 +263,7 @@ function showToast(message, type = 'success') {
 }
 
 // ==========================================
-// 4. 进度追踪
+// 6. 进度追踪
 // ==========================================
 function updateMasteryProgress() {
     if (typeof allIdioms === 'undefined' || allIdioms.length === 0) {
@@ -219,7 +286,7 @@ function updateMasteryProgress() {
 
 
 // ==========================================
-// 5. 核心 Quiz (小测验) 控制逻辑
+// 7. 核心 Quiz (小测验) 控制逻辑
 // ==========================================
 
 // 开启测验
@@ -229,39 +296,32 @@ function startQuiz() {
         return;
     }
 
-    // 获取所有未被考过的词
     const availableWords = allIdioms.filter(item => !quizHistory.includes(item.word));
     
-    // 如果所有词都考过了，重置历史并增加轮次
     if (availableWords.length === 0) {
         quizHistory = [];
         quizRound++;
         showToast(`🔄 第 ${quizRound} 轮完成！开始新一轮测试`, "success");
-        // 重新获取可用词
         const newAvailable = allIdioms.filter(item => !quizHistory.includes(item.word));
         if (newAvailable.length === 0) {
             showToast("⚠️ 没有可用的生词了！", "error");
             return;
         }
-        // 更新可用词列表
         const shuffled = [...newAvailable].sort(() => 0.5 - Math.random());
         const actualTotal = Math.min(5, shuffled.length);
         quizQuestions = shuffled.slice(0, actualTotal);
     } else {
-        // 从可用词中随机选5个（或不足5个就全选）
         const shuffled = [...availableWords].sort(() => 0.5 - Math.random());
         const actualTotal = Math.min(5, shuffled.length);
         quizQuestions = shuffled.slice(0, actualTotal);
     }
 
-    // 记录本次考过的词
     quizQuestions.forEach(q => {
         if (!quizHistory.includes(q.word)) {
             quizHistory.push(q.word);
         }
     });
 
-    // 随机分配三种题型
     quizQuestions = quizQuestions.map(q => {
         return {
             ...q,
@@ -275,7 +335,6 @@ function startQuiz() {
     document.getElementById('quiz-question-container').classList.remove('hidden');
     document.getElementById('quiz-result-container').classList.add('hidden');
 
-    // 更新弹窗标题，显示轮次
     document.getElementById('quiz-title-text').innerText = `🎯 生词测验 - 第 ${quizRound + 1} 轮`;
     document.getElementById('quiz-modal').classList.remove('hidden');
     renderQuizQuestion();
@@ -406,7 +465,6 @@ function showQuizResults() {
         evaluation = "👍 及格啦，答错的词已经自动帮你放入错题库啰！";
     }
     
-    // 显示剩余未考词数量
     const remaining = allIdioms.filter(item => !quizHistory.includes(item.word)).length;
     evaluation += `<br><span class="text-[10px] text-stone-400">剩余 ${remaining} 个生词待测试</span>`;
     
